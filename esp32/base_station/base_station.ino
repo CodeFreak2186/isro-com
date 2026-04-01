@@ -33,9 +33,9 @@
 // ---------------------------------------------------------------------------
 // ★ CHANGE THESE before flashing ★
 // ---------------------------------------------------------------------------
-const char* WIFI_SSID     = "YOUR_WIFI_SSID";
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
-const char* DATA_URL      = "http://192.168.1.100:5000/data";
+const char* WIFI_SSID     = "sam";
+const char* WIFI_PASSWORD = "SANS2186";
+const char* DATA_URL      = "https://isro-com.onrender.com/telemetry";
 //                                   ^^^^^^^^^^^^^ your server IP
 
 // How often to hit the server (milliseconds).
