@@ -862,20 +862,22 @@ function applyData(d){
   updateRSSI(parseInt(d.rc_rssi)||0);
 }
 
-// ── Fetch loop ────────────────────────────────────────────────────────────────
-async function fetchData(){
-  try{
-    const r=await fetch("/data");
-    if(!r.ok)throw new Error("HTTP "+r.status);
-    const d=await r.json();
+// ── SSE — server pushes data the instant Pi uploads it (no polling) ──────────
+const source = new EventSource("/stream");
+
+source.onmessage = (e) => {
+  try {
+    const d = JSON.parse(e.data);
     setOnline(true);
     trackHz();
     applyData(d);
-  }catch(_){setOnline(false)}
-}
+  } catch(_) {}
+};
 
-fetchData();
-setInterval(fetchData, 200);   // 5 Hz — matches drone output rate
+source.onerror = () => {
+  setOnline(false);
+  // EventSource auto-reconnects — nothing extra needed
+};
 
 // ── File upload ───────────────────────────────────────────────────────────────
 let _f=null;

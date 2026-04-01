@@ -4,9 +4,11 @@ Deployed on Render — APScheduler runs a background job every 15 seconds.
 """
 
 import os
+import json
+import queue
 import logging
 from datetime import datetime, timezone
-from flask import Flask, request, jsonify, send_from_directory, render_template
+from flask import Flask, request, jsonify, send_from_directory, render_template, Response, stream_with_context
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -90,6 +92,24 @@ telemetry = {
 
 # Track when we last received a Pi upload (UTC)
 _last_upload_time: datetime | None = None
+
+# ---------------------------------------------------------------------------
+# SSE client registry — one queue per connected browser tab
+# ---------------------------------------------------------------------------
+_sse_clients: list[queue.Queue] = []
+
+def _push_to_sse(data: dict):
+    """Broadcast latest telemetry to every open SSE connection."""
+    payload = json.dumps(data)
+    dead = []
+    for q in _sse_clients:
+        try:
+            q.put_nowait(payload)
+        except queue.Full:
+            dead.append(q)
+    for q in dead:
+        _sse_clients.remove(q)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -233,10 +253,47 @@ def upload():
 
     log.info("Telemetry — status=%s  alt=%.1fm  batt=%.2fV",
              telemetry["status"], telemetry["alt"], telemetry["battery_voltage"])
+
+    # Push immediately to every open browser SSE connection
+    _push_to_sse(telemetry)
+
     return jsonify({"ok": True}), 200
 
 
-# ── Latest telemetry (browser + ESP32) ─────────────────────────────────────
+# ── SSE stream — browser subscribes here, receives data on every Pi upload ──
+@app.route("/stream")
+def stream():
+    def event_generator():
+        q = queue.Queue(maxsize=30)
+        _sse_clients.append(q)
+        # Send current state immediately so the page isn't blank on load
+        yield f"data: {json.dumps(telemetry)}\n\n"
+        try:
+            while True:
+                try:
+                    payload = q.get(timeout=25)
+                    yield f"data: {payload}\n\n"
+                except queue.Empty:
+                    # Send a keep-alive comment so the connection stays open
+                    yield ": keep-alive\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            if q in _sse_clients:
+                _sse_clients.remove(q)
+
+    return Response(
+        stream_with_context(event_generator()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control":    "no-cache",
+            "X-Accel-Buffering": "no",   # disables Nginx buffering on Render
+            "Connection":       "keep-alive",
+        },
+    )
+
+
+# ── Latest telemetry (ESP32 still polls this) ───────────────────────────────
 @app.route("/data")
 def data():
     return jsonify(telemetry), 200

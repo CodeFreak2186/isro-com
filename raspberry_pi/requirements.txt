@@ -1,2 +1,2 @@
 requests==2.32.3
-# No camera library needed — the Pi no longer captures or sends images
+pymavlink==2.4.41
