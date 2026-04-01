@@ -6,6 +6,7 @@ Deployed on Render — APScheduler runs a background job every 15 seconds.
 import os
 import json
 import queue
+import time
 import logging
 from datetime import datetime, timezone
 from flask import Flask, request, jsonify, send_from_directory, render_template, Response, stream_with_context
@@ -91,7 +92,9 @@ telemetry = {
 }
 
 # Track when we last received a Pi upload (UTC)
-_last_upload_time: datetime | None = None
+_last_upload_time:   datetime | None = None
+_image_upload_time: float | None    = None   # set when website uploads an image
+IMAGE_UPLOAD_DISPLAY_S = 10                  # show "uploading" indicator for this many seconds
 
 # ---------------------------------------------------------------------------
 # SSE client registry — one queue per connected browser tab
@@ -293,21 +296,28 @@ def stream():
     )
 
 
-# ── Latest telemetry (ESP32 still polls this) ───────────────────────────────
+# ── Latest telemetry (ESP32 polls this) ────────────────────────────────────
 @app.route("/data")
 def data():
-    return jsonify(telemetry), 200
+    # Attach image_uploading flag so ESP32 can show it on OLED
+    img_up = (
+        _image_upload_time is not None and
+        (time.time() - _image_upload_time) < IMAGE_UPLOAD_DISPLAY_S
+    )
+    return jsonify({**telemetry, "image_uploading": img_up}), 200
 
 
 # ── Website uploads image → Pi downloads it ────────────────────────────────
 @app.route("/upload-from-website", methods=["POST"])
 def upload_from_website():
+    global _image_upload_time
     if "image" not in request.files:
         return jsonify({"error": "No image"}), 400
     f = request.files["image"]
     if not f or not f.filename or not allowed(f.filename):
         return jsonify({"error": "Invalid file"}), 400
     f.save(os.path.join(UPLOAD_FOLDER, WEBSITE_IMAGE))
+    _image_upload_time = time.time()   # flag so ESP32 shows "uploading" notice
     log.info("Website image saved.")
     return jsonify({"ok": True, "image_url": f"/uploads/{WEBSITE_IMAGE}"}), 200
 
