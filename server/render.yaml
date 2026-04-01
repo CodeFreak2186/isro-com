@@ -1,0 +1,27 @@
+# ============================================================
+#  Render deployment config
+#  Docs: https://render.com/docs/render-yaml-spec
+# ============================================================
+services:
+  - type: web
+    name: drone-server
+    env: python
+    region: oregon          # or: frankfurt, singapore, ohio
+    plan: free              # change to "starter" for always-on
+
+    # Build: install Python dependencies
+    buildCommand: pip install -r requirements.txt
+
+    # Start: gunicorn with 1 worker so APScheduler only runs once.
+    # $PORT is injected by Render automatically.
+    startCommand: gunicorn app:app --workers=1 --threads=4 --bind=0.0.0.0:$PORT --timeout=120
+
+    # Health-check endpoint Render pings to confirm the app is up
+    healthCheckPath: /health
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      # Set to "production" to disable Flask debug mode
+      - key: FLASK_ENV
+        value: production

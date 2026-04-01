@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Drone Sensor Dashboard</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════
+   TOKENS
+═══════════════════════════════════════════════════════════════════════ */
+:root{
+  --bg:       #04070f;
+  --s1:       #080d1a;
+  --s2:       #0c1220;
+  --s3:       #101826;
+  --border:   #162236;
+  --border2:  #1e3050;
+
+  --cyan:     #00d4ff;
+  --cyan-d:   rgba(0,212,255,.12);
+  --cyan-g:   rgba(0,212,255,.06);
+  --green:    #00e676;
+  --green-d:  rgba(0,230,118,.12);
+  --amber:    #ffb300;
+  --amber-d:  rgba(255,179,0,.12);
+  --red:      #ff3d3d;
+  --red-d:    rgba(255,61,61,.12);
+  --purple:   #b47cff;
+  --purple-d: rgba(180,124,255,.10);
+
+  --txt:    #ddeeff;
+  --muted:  #4a6b8a;
+  --dim:    #243550;
+  --mono:   'Consolas','Courier New',monospace;
+  --sans:   'Segoe UI',system-ui,sans-serif;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+/* subtle scanline overlay */
+body::before{
+  content:'';position:fixed;inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.04) 2px,rgba(0,0,0,.04) 4px);
+  pointer-events:none;z-index:9999;
+}
+
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:99px}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TOPBAR
+═══════════════════════════════════════════════════════════════════════ */
+.topbar{
+  height:56px;display:flex;align-items:center;gap:16px;
+  padding:0 24px;
+  background:linear-gradient(90deg,var(--s1),var(--s2));
+  border-bottom:1px solid var(--border2);
+  position:sticky;top:0;z-index:200;
+}
+.tb-logo{
+  width:36px;height:36px;border-radius:9px;flex-shrink:0;
+  background:linear-gradient(135deg,#005f8f,#0099cc);
+  box-shadow:0 0 18px rgba(0,212,255,.4);
+  display:grid;place-items:center;font-size:18px;
+}
+.tb-brand{font-size:.95rem;font-weight:700;letter-spacing:.04em;color:var(--cyan);text-shadow:0 0 12px rgba(0,212,255,.5)}
+.tb-sub{font-size:.65rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+.tb-center{margin-left:auto;display:flex;align-items:center;gap:8px}
+.tb-right{display:flex;align-items:center;gap:10px;margin-left:24px}
+
+/* status + mode tags */
+.tag{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:4px 13px;border-radius:99px;
+  font-size:.7rem;font-weight:700;letter-spacing:.08em;font-family:var(--mono);
+  border:1px solid transparent;
+}
+.tag-armed  {background:rgba(255,61,61,.15);border-color:rgba(255,61,61,.4);color:var(--red)}
+.tag-disarm {background:rgba(0,230,118,.1);border-color:rgba(0,230,118,.3);color:var(--green)}
+.tag-mode   {background:rgba(0,212,255,.09);border-color:rgba(0,212,255,.3);color:var(--cyan)}
+.tag-live   {background:rgba(0,230,118,.1);border-color:rgba(0,230,118,.35);color:var(--green)}
+.tag .dot   {width:6px;height:6px;border-radius:50%;background:currentColor;
+             animation:pulse 1.4s ease-in-out infinite}
+.tag-offline{background:rgba(255,61,61,.1);border-color:rgba(255,61,61,.3);color:var(--red)}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.25;transform:scale(.5)}}
+
+.hz-rate{font-size:.65rem;color:var(--muted);font-family:var(--mono);white-space:nowrap}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   GRID
+═══════════════════════════════════════════════════════════════════════ */
+.grid{
+  display:grid;
+  grid-template-columns:260px 1fr 1fr 1fr;
+  grid-template-rows:auto auto auto;
+  gap:12px;
+  padding:14px;
+  max-width:1600px;
+  margin:0 auto;
+}
+@media(max-width:1200px){.grid{grid-template-columns:1fr 1fr;}}
+@media(max-width:700px) {.grid{grid-template-columns:1fr;}}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CARD BASE
+═══════════════════════════════════════════════════════════════════════ */
+.card{
+  background:var(--s1);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:14px 16px;
+  position:relative;
+  overflow:hidden;
+}
+/* top accent glow line */
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.card.c-cyan  ::before{background:linear-gradient(90deg,var(--cyan),transparent)}
+.card.c-green ::before{background:linear-gradient(90deg,var(--green),transparent)}
+.card.c-amber ::before{background:linear-gradient(90deg,var(--amber),transparent)}
+.card.c-red   ::before{background:linear-gradient(90deg,var(--red),transparent)}
+.card.c-purple::before{background:linear-gradient(90deg,var(--purple),transparent)}
+
+/* inner bg tint */
+.card.c-cyan  {box-shadow:inset 0 0 80px var(--cyan-g)}
+.card.c-green {box-shadow:inset 0 0 80px var(--green-d)}
+.card.c-amber {box-shadow:inset 0 0 80px var(--amber-d)}
+
+.c-head{
+  font-size:.62rem;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted);
+  margin-bottom:10px;display:flex;align-items:center;gap:8px;
+}
+.c-head::after{content:'';flex:1;height:1px;background:var(--border)}
+.c-head .ico{font-size:.9rem}
+
+/* grid spans */
+.span-row2{grid-row:span 2}
+.span-row3{grid-row:span 3}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ARTIFICIAL HORIZON
+═══════════════════════════════════════════════════════════════════════ */
+.horizon-card{
+  grid-column:1;
+  grid-row:1/3;
+  display:flex;flex-direction:column;
+  align-items:center;
+  background:linear-gradient(180deg,#040a14,#060d1c);
+}
+#horizSvg{width:100%;max-width:240px;aspect-ratio:1;display:block;filter:drop-shadow(0 0 12px rgba(0,212,255,.2))}
+
+.horizon-vals{
+  display:grid;grid-template-columns:1fr 1fr 1fr;
+  gap:6px;width:100%;margin-top:12px;
+}
+.h-val{text-align:center}
+.h-val .lbl{font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.h-val .num{font-family:var(--mono);font-size:1.1rem;font-weight:700;color:var(--cyan);
+  text-shadow:0 0 8px rgba(0,212,255,.5)}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   VFR HUD card
+═══════════════════════════════════════════════════════════════════════ */
+.vfr-card{grid-column:2}
+.vfr-big{font-family:var(--mono);font-size:2rem;font-weight:700;color:var(--cyan);
+  text-shadow:0 0 10px rgba(0,212,255,.4);line-height:1;margin-bottom:2px}
+.vfr-unit{font-size:.75rem;color:var(--muted);margin-left:3px}
+.vfr-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.vfr-item .lbl{font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.vfr-item .val{font-family:var(--mono);font-size:.95rem;font-weight:600}
+.val-cyan  {color:var(--cyan)}
+.val-green {color:var(--green)}
+.val-amber {color:var(--amber)}
+.val-red   {color:var(--red)}
+.val-purple{color:var(--purple)}
+.val-white {color:var(--txt)}
+
+/* heading compass strip */
+.compass-strip{
+  margin-top:10px;padding:6px 0;
+  background:var(--s2);border-radius:6px;border:1px solid var(--border);
+  position:relative;overflow:hidden;text-align:center;
+}
+#compassCanvas{display:block;width:100%;height:40px}
+
+/* throttle bar */
+.thr-wrap{margin-top:10px}
+.thr-lbl{font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;display:flex;justify-content:space-between}
+.thr-track{height:8px;background:var(--s2);border-radius:99px;overflow:hidden;border:1px solid var(--border)}
+.thr-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--green),var(--amber),var(--red));
+  transition:width .4s cubic-bezier(.4,0,.2,1)}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BATTERY card
+═══════════════════════════════════════════════════════════════════════ */
+.batt-card{grid-column:3}
+.batt-big{font-family:var(--mono);font-size:2.4rem;font-weight:700;line-height:1;
+  transition:color .3s,text-shadow .3s}
+.batt-sub{font-size:.75rem;color:var(--muted);margin-top:4px}
+.batt-bar-wrap{margin-top:12px;height:10px;background:var(--s2);border-radius:99px;
+  overflow:hidden;border:1px solid var(--border)}
+.batt-bar{height:100%;border-radius:99px;transition:width .8s cubic-bezier(.4,0,.2,1),background .4s}
+.batt-curr{margin-top:8px;display:flex;justify-content:space-between;font-size:.75rem}
+.batt-curr .lbl{color:var(--muted)}
+.batt-curr .val{font-family:var(--mono);font-weight:600;color:var(--amber)}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   EKF card
+═══════════════════════════════════════════════════════════════════════ */
+.ekf-card{grid-column:4}
+.ekf-status-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.ekf-badge{
+  padding:3px 10px;border-radius:99px;font-size:.68rem;font-weight:700;letter-spacing:.06em;
+  font-family:var(--mono);
+}
+.ekf-ok  {background:var(--green-d);border:1px solid rgba(0,230,118,.35);color:var(--green)}
+.ekf-bad {background:var(--red-d);  border:1px solid rgba(255,61,61,.35); color:var(--red)}
+.ekf-flags{font-family:var(--mono);font-size:.75rem;color:var(--cyan)}
+
+.ekf-active{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0}
+.ekf-chip{
+  font-size:.58rem;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.04em;
+  background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.25);color:var(--cyan);
+  font-family:var(--mono);
+}
+.ekf-vars{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px}
+.ekf-var .lbl{font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.ekf-var .val{font-family:var(--mono);font-size:.82rem;color:var(--green);font-weight:600}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LOCAL POSITION card
+═══════════════════════════════════════════════════════════════════════ */
+.pos-card{grid-column:2}
+.pos-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:.78rem}
+.pos-table td{padding:3px 6px;border-bottom:1px solid var(--border)}
+.pos-table td:first-child{color:var(--muted);font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;width:50px}
+.pos-table td:nth-child(2){color:var(--cyan);text-align:right;width:80px}
+.pos-table td:nth-child(3){color:var(--muted);font-size:.65rem;padding-left:8px}
+.pos-table .pos-row td:nth-child(2){color:var(--green)}
+.pos-table .vel-row td:nth-child(2){color:var(--amber)}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   OPTICAL FLOW card
+═══════════════════════════════════════════════════════════════════════ */
+.flow-card{grid-column:3}
+.flow-quality-wrap{margin-bottom:8px}
+.flow-quality-bar{height:6px;background:var(--s2);border-radius:99px;overflow:hidden;border:1px solid var(--border);margin-top:3px}
+.flow-quality-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--red),var(--amber),var(--green));
+  transition:width .5s cubic-bezier(.4,0,.2,1)}
+.flow-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.flow-item .lbl{font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.flow-item .val{font-family:var(--mono);font-size:.85rem;font-weight:600;color:var(--purple)}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RANGEFINDER card
+═══════════════════════════════════════════════════════════════════════ */
+.rng-card{grid-column:4}
+.rng-big{font-family:var(--mono);font-size:2.2rem;font-weight:700;color:var(--amber);
+  text-shadow:0 0 10px rgba(255,179,0,.4);line-height:1}
+.rng-unit{font-size:.9rem;color:var(--muted);margin-left:4px}
+.rng-bar-wrap{margin-top:10px;height:6px;background:var(--s2);border-radius:99px;overflow:hidden;border:1px solid var(--border)}
+.rng-bar-fill{height:100%;border-radius:99px;background:var(--amber);
+  box-shadow:0 0 6px rgba(255,179,0,.5);transition:width .5s cubic-bezier(.4,0,.2,1)}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RC INPUT card
+═══════════════════════════════════════════════════════════════════════ */
+.rc-card{grid-column:1}
+.rc-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.rc-label{font-size:.65rem;color:var(--muted);font-family:var(--mono);width:52px;flex-shrink:0;text-transform:uppercase}
+.rc-track{flex:1;height:6px;background:var(--s2);border-radius:99px;overflow:hidden;border:1px solid var(--border);position:relative}
+.rc-fill{height:100%;background:var(--cyan);border-radius:99px;
+  transition:width .3s cubic-bezier(.4,0,.2,1)}
+.rc-val{font-family:var(--mono);font-size:.7rem;color:var(--cyan);width:38px;text-align:right;flex-shrink:0}
+.rssi-row{margin-top:10px;display:flex;align-items:center;gap:10px;
+  padding-top:8px;border-top:1px solid var(--border)}
+.rssi-lbl{font-size:.65rem;color:var(--muted);font-family:var(--mono)}
+.rssi-bars{display:flex;gap:3px;align-items:flex-end}
+.rssi-bar{width:5px;border-radius:2px 2px 0 0;background:var(--border);transition:background .3s}
+.rssi-bar.on{background:var(--green)}
+.rssi-val{font-family:var(--mono);font-size:.75rem;color:var(--green);margin-left:4px}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   UPLOAD STRIP
+═══════════════════════════════════════════════════════════════════════ */
+.upload-strip{
+  grid-column:1/-1;
+  background:var(--s1);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:14px 20px;
+  display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+}
+.us-info{flex:1;min-width:180px}
+.us-title{font-size:.85rem;font-weight:700;color:var(--txt)}
+.us-sub  {font-size:.72rem;color:var(--muted);margin-top:2px}
+#fileInput{display:none}
+.btn-file{
+  padding:8px 16px;border-radius:8px;cursor:pointer;font-size:.8rem;font-weight:600;
+  border:1px solid var(--border2);background:var(--s2);color:var(--txt);
+  transition:border-color .2s,background .2s;white-space:nowrap;
+}
+.btn-file:hover{border-color:var(--cyan);background:var(--cyan-d)}
+#selName{font-size:.78rem;color:var(--muted);flex:1;min-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn-send{
+  padding:9px 20px;border-radius:8px;border:none;cursor:pointer;
+  background:linear-gradient(135deg,#0066cc,#004499);
+  color:#fff;font-size:.85rem;font-weight:700;white-space:nowrap;
+  box-shadow:0 3px 14px rgba(0,100,204,.4);
+  transition:opacity .15s,transform .1s;
+}
+.btn-send:disabled{opacity:.35;cursor:not-allowed;box-shadow:none}
+.btn-send:not(:disabled):hover{box-shadow:0 4px 20px rgba(0,150,255,.5)}
+.btn-send:active{transform:scale(.97)}
+#upResult{font-size:.75rem;font-weight:700;white-space:nowrap}
+.ok {color:var(--green)}
+.err{color:var(--red)}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════════════════════════════════ */
+#toast{
+  position:fixed;bottom:20px;right:20px;
+  background:var(--s2);border:1px solid var(--border2);border-left:3px solid var(--green);
+  border-radius:8px;padding:11px 16px;font-size:.8rem;max-width:280px;
+  box-shadow:0 6px 28px rgba(0,0,0,.5);z-index:9000;
+  opacity:0;transform:translateY(10px);
+  transition:opacity .25s,transform .25s;pointer-events:none;
+}
+#toast.show{opacity:1;transform:none}
+#toast.te{border-left-color:var(--red)}
+</style>
+</head>
+<body>
+
+<!-- ══ TOPBAR ══════════════════════════════════════════════════════════════ -->
+<header class="topbar">
+  <div class="tb-logo">🚁</div>
+  <div>
+    <div class="tb-brand">DRONE CONTROL CENTER</div>
+    <div class="tb-sub">Sensor Dashboard — Pre-flight</div>
+  </div>
+  <div class="tb-center">
+    <span class="tag tag-disarm" id="tagStatus"><span class="dot"></span><span id="txtStatus">DISARMED</span></span>
+    <span class="tag tag-mode"   id="tagMode">STABILIZE</span>
+  </div>
+  <div class="tb-right">
+    <span class="hz-rate" id="hzRate">0.0 Hz</span>
+    <span class="tag tag-live"><span class="dot"></span>LIVE</span>
+    <span class="tag tag-offline" id="tagConn">OFFLINE</span>
+  </div>
+</header>
+
+<!-- ══ MAIN GRID ═══════════════════════════════════════════════════════════ -->
+<div class="grid">
+
+  <!-- ── Artificial Horizon ─────────────────────────────────────────────── -->
+  <div class="card c-cyan horizon-card">
+    <div class="c-head"><span class="ico">✈</span>Attitude Indicator</div>
+
+    <svg id="horizSvg" viewBox="0 0 220 220">
+      <defs>
+        <clipPath id="hclip"><circle cx="110" cy="110" r="100"/></clipPath>
+        <radialGradient id="skyG" cx="50%" cy="30%">
+          <stop offset="0%"   stop-color="#0055aa"/>
+          <stop offset="100%" stop-color="#001f44"/>
+        </radialGradient>
+        <radialGradient id="gndG" cx="50%" cy="70%">
+          <stop offset="0%"   stop-color="#6b3a0a"/>
+          <stop offset="100%" stop-color="#3a1e00"/>
+        </radialGradient>
+        <!-- outer ring gradient -->
+        <linearGradient id="ringG" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#1a3a5c"/>
+          <stop offset="100%" stop-color="#0a1a2e"/>
+        </linearGradient>
+      </defs>
+
+      <!-- rotating horizon group (roll) -->
+      <g id="hGroup" clip-path="url(#hclip)">
+        <!-- translating pitch group inside -->
+        <g id="hPitch">
+          <!-- sky -->
+          <rect x="-200" y="-300" width="620" height="410" fill="url(#skyG)"/>
+          <!-- ground -->
+          <rect x="-200" y="110" width="620" height="300" fill="url(#gndG)"/>
+          <!-- horizon line -->
+          <line x1="-200" y1="110" x2="620" y2="110" stroke="rgba(255,255,255,.5)" stroke-width="1"/>
+          <!-- pitch lines -->
+          <g stroke="rgba(255,255,255,.35)" stroke-width="1" font-family="Consolas,monospace" font-size="9" fill="rgba(255,255,255,.5)">
+            <line x1="70" y1="77" x2="150" y2="77"/><text x="155" y="81">5</text>
+            <line x1="70" y1="143" x2="150" y2="143"/><text x="155" y="147">-5</text>
+            <line x1="80" y1="44" x2="140" y2="44"/><text x="145" y="48">10</text>
+            <line x1="80" y1="176" x2="140" y2="176"/><text x="145" y="180">-10</text>
+          </g>
+        </g>
+      </g>
+
+      <!-- outer ring -->
+      <circle cx="110" cy="110" r="100" fill="none" stroke="url(#ringG)" stroke-width="6"/>
+      <circle cx="110" cy="110" r="100" fill="none" stroke="rgba(0,212,255,.2)" stroke-width="1"/>
+
+      <!-- roll arc markings (fixed) -->
+      <g stroke="rgba(255,255,255,.4)" stroke-width="1.2" fill="rgba(255,255,255,.5)" font-family="Consolas,monospace" font-size="8">
+        <!-- every 30° roll tick -->
+        <line x1="110" y1="11" x2="110" y2="20"/>
+        <line x1="160.4" y1="24.9" x2="155.1" y2="33.1"/>
+        <line x1="195.1" y1="59.6" x2="186.9" y2="64.9"/>
+        <line x1="207.5" y1="110" x2="198" y2="110"/>
+        <line x1="195.1" y1="160.4" x2="186.9" y2="155.1"/>
+        <line x1="160.4" y1="195.1" x2="155.1" y2="186.9"/>
+        <line x1="59.6" y1="24.9" x2="64.9" y2="33.1"/>
+        <line x1="24.9" y1="59.6" x2="33.1" y2="64.9"/>
+        <line x1="12.5" y1="110" x2="22" y2="110"/>
+        <line x1="24.9" y1="160.4" x2="33.1" y2="155.1"/>
+        <line x1="59.6" y1="195.1" x2="64.9" y2="186.9"/>
+      </g>
+
+      <!-- roll pointer (moves with roll) -->
+      <polygon id="rollPtr" points="110,14 105,24 115,24" fill="var(--cyan)"/>
+
+      <!-- fixed aircraft symbol -->
+      <g stroke="var(--amber)" stroke-width="2.5" fill="none" stroke-linecap="round">
+        <!-- wings -->
+        <line x1="70" y1="110" x2="94" y2="110"/>
+        <line x1="126" y1="110" x2="150" y2="110"/>
+        <!-- fuselage dot -->
+        <circle cx="110" cy="110" r="4" fill="var(--amber)" stroke="none"/>
+        <!-- tail -->
+        <line x1="110" y1="110" x2="110" y2="122"/>
+        <!-- wing tips down -->
+        <line x1="70" y1="110" x2="70" y2="116"/>
+        <line x1="150" y1="110" x2="150" y2="116"/>
+      </g>
+
+      <!-- centre cross -->
+      <circle cx="110" cy="110" r="2" fill="white" opacity=".6"/>
+    </svg>
+
+    <!-- roll/pitch/yaw readout below -->
+    <div class="horizon-vals">
+      <div class="h-val">
+        <div class="lbl">Roll</div>
+        <div class="num" id="hRoll">0.0°</div>
+      </div>
+      <div class="h-val">
+        <div class="lbl">Pitch</div>
+        <div class="num" id="hPitchV">0.0°</div>
+      </div>
+      <div class="h-val">
+        <div class="lbl">Yaw</div>
+        <div class="num" id="hYaw">0.0°</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── VFR HUD ───────────────────────────────────────────────────────── -->
+  <div class="card c-cyan vfr-card">
+    <div class="c-head"><span class="ico">🛫</span>VFR HUD</div>
+
+    <div class="vfr-big"><span id="vAlt">0.000</span><span class="vfr-unit">m alt</span></div>
+
+    <div class="vfr-grid">
+      <div class="vfr-item">
+        <div class="lbl">Climb Rate</div>
+        <div class="val val-green" id="vClimb">0.000 m/s</div>
+      </div>
+      <div class="vfr-item">
+        <div class="lbl">Heading</div>
+        <div class="val val-cyan" id="vHdg">0°</div>
+      </div>
+    </div>
+
+    <div class="thr-wrap">
+      <div class="thr-lbl">
+        <span>Throttle</span>
+        <span id="vThrPct">0%</span>
+      </div>
+      <div class="thr-track"><div class="thr-fill" id="thrFill" style="width:0%"></div></div>
+    </div>
+
+    <!-- compass heading strip -->
+    <div style="margin-top:10px">
+      <div class="c-head" style="margin-bottom:6px"><span class="ico">🧭</span>Compass</div>
+      <canvas id="compassCanvas" width="400" height="44"></canvas>
+    </div>
+  </div>
+
+  <!-- ── Battery ──────────────────────────────────────────────────────────── -->
+  <div class="card c-green batt-card">
+    <div class="c-head"><span class="ico">🔋</span>Battery</div>
+
+    <div class="batt-big" id="bBig">0.000<span style="font-size:1rem;color:var(--muted);margin-left:4px">V</span></div>
+    <div class="batt-sub" id="bPctTxt">— % charged</div>
+
+    <div class="batt-bar-wrap"><div class="batt-bar" id="bBar"></div></div>
+
+    <div class="batt-curr">
+      <span><span class="lbl">Current</span></span>
+      <span><span class="val" id="bCurr">0.000 A</span></span>
+    </div>
+    <div class="batt-curr" style="margin-top:4px">
+      <span><span class="lbl">Power</span></span>
+      <span><span class="val" id="bPow">0.00 W</span></span>
+    </div>
+  </div>
+
+  <!-- ── EKF Status ─────────────────────────────────────────────────────── -->
+  <div class="card c-cyan ekf-card">
+    <div class="c-head"><span class="ico">📡</span>EKF Status</div>
+
+    <div class="ekf-status-row">
+      <span class="ekf-badge ekf-bad" id="ekfBadge">UNKNOWN</span>
+      <span class="ekf-flags" id="ekfFlags">0x0000</span>
+    </div>
+
+    <div class="ekf-active" id="ekfActive">
+      <!-- chips filled by JS -->
+    </div>
+
+    <div class="ekf-vars">
+      <div class="ekf-var">
+        <div class="lbl">Vel Var</div>
+        <div class="val" id="ekfVV">0.000</div>
+      </div>
+      <div class="ekf-var">
+        <div class="lbl">Pos Var</div>
+        <div class="val" id="ekfPV">0.000</div>
+      </div>
+      <div class="ekf-var">
+        <div class="lbl">Comp Var</div>
+        <div class="val" id="ekfCV">0.000</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Local Position ──────────────────────────────────────────────────── -->
+  <div class="card c-green pos-card">
+    <div class="c-head"><span class="ico">📍</span>Local Position (EKF)</div>
+    <table class="pos-table">
+      <tr class="pos-row"><td>X (N)</td><td id="pX">0.000</td><td>m</td></tr>
+      <tr class="pos-row"><td>Y (E)</td><td id="pY">0.000</td><td>m</td></tr>
+      <tr class="pos-row"><td>Z (D)</td><td id="pZ">0.000</td><td>m ↑ = above gnd</td></tr>
+      <tr class="vel-row"><td>Vx</td>  <td id="vX">0.000</td><td>m/s</td></tr>
+      <tr class="vel-row"><td>Vy</td>  <td id="vY">0.000</td><td>m/s</td></tr>
+      <tr class="vel-row"><td>Vz</td>  <td id="vZ">0.000</td><td>m/s</td></tr>
+    </table>
+  </div>
+
+  <!-- ── Optical Flow ─────────────────────────────────────────────────────── -->
+  <div class="card c-purple flow-card">
+    <div class="c-head"><span class="ico">👁</span>Optical Flow (MTF-01)</div>
+
+    <div class="flow-quality-wrap">
+      <div style="display:flex;justify-content:space-between;font-size:.62rem;color:var(--muted)">
+        <span>Quality</span><span id="flowQval">0/255</span>
+      </div>
+      <div class="flow-quality-bar"><div class="flow-quality-fill" id="flowQBar" style="width:0%"></div></div>
+    </div>
+
+    <div class="flow-grid">
+      <div class="flow-item"><div class="lbl">Flow X</div><div class="val" id="flX">0.000 px/s</div></div>
+      <div class="flow-item"><div class="lbl">Flow Y</div><div class="val" id="flY">0.000 px/s</div></div>
+      <div class="flow-item"><div class="lbl">Comp X</div><div class="val" id="flCX">0.000 m/s</div></div>
+      <div class="flow-item"><div class="lbl">Comp Y</div><div class="val" id="flCY">0.000 m/s</div></div>
+    </div>
+  </div>
+
+  <!-- ── Rangefinder ──────────────────────────────────────────────────────── -->
+  <div class="card c-amber rng-card">
+    <div class="c-head"><span class="ico">📏</span>Rangefinder (TOF)</div>
+    <div class="rng-big" id="rngBig">0.000<span class="rng-unit">m</span></div>
+    <div style="font-size:.7rem;color:var(--muted);margin-top:4px">Sensor voltage: <span id="rngV" style="color:var(--amber);font-family:var(--mono)">0.000 V</span></div>
+    <div class="rng-bar-wrap"><div class="rng-bar-fill" id="rngBar" style="width:0%"></div></div>
+    <div style="font-size:.6rem;color:var(--dim);margin-top:4px;display:flex;justify-content:space-between">
+      <span>0 m</span><span>5 m</span>
+    </div>
+  </div>
+
+  <!-- ── RC Input ─────────────────────────────────────────────────────────── -->
+  <div class="card c-cyan rc-card">
+    <div class="c-head"><span class="ico">🎮</span>RC Input</div>
+
+    <div class="rc-row">
+      <div class="rc-label">CH1 Roll</div>
+      <div class="rc-track"><div class="rc-fill" id="rc1" style="width:50%"></div></div>
+      <div class="rc-val" id="rc1v">1500</div>
+    </div>
+    <div class="rc-row">
+      <div class="rc-label">CH2 Pitch</div>
+      <div class="rc-track"><div class="rc-fill" id="rc2" style="width:50%"></div></div>
+      <div class="rc-val" id="rc2v">1500</div>
+    </div>
+    <div class="rc-row">
+      <div class="rc-label">CH3 Throt</div>
+      <div class="rc-track"><div class="rc-fill" id="rc3" style="width:0%"></div></div>
+      <div class="rc-val" id="rc3v">1000</div>
+    </div>
+    <div class="rc-row">
+      <div class="rc-label">CH4 Yaw</div>
+      <div class="rc-track"><div class="rc-fill" id="rc4" style="width:50%"></div></div>
+      <div class="rc-val" id="rc4v">1500</div>
+    </div>
+    <div class="rc-row">
+      <div class="rc-label">CH5 Mode</div>
+      <div class="rc-track"><div class="rc-fill" id="rc5" style="width:80%"></div></div>
+      <div class="rc-val" id="rc5v">1800</div>
+    </div>
+
+    <div class="rssi-row">
+      <div class="rssi-lbl">RSSI</div>
+      <div class="rssi-bars" id="rssiBars">
+        <div class="rssi-bar" style="height:8px"></div>
+        <div class="rssi-bar" style="height:12px"></div>
+        <div class="rssi-bar" style="height:16px"></div>
+        <div class="rssi-bar" style="height:20px"></div>
+        <div class="rssi-bar" style="height:24px"></div>
+      </div>
+      <div class="rssi-val" id="rssiVal">0</div>
+    </div>
+  </div>
+
+  <!-- ── Upload strip ─────────────────────────────────────────────────────── -->
+  <div class="upload-strip">
+    <div class="us-info">
+      <div class="us-title">📤 Send Image to Drone</div>
+      <div class="us-sub">Pi auto-downloads any image uploaded here</div>
+    </div>
+    <input type="file" id="fileInput" accept="image/*"/>
+    <label class="btn-file" for="fileInput">Choose File</label>
+    <span id="selName">No file chosen</span>
+    <button class="btn-send" id="sendBtn" disabled>Send to Pi</button>
+    <span id="upResult"></span>
+  </div>
+
+</div><!-- /.grid -->
+
+<div id="toast"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     JS
+════════════════════════════════════════════════════════════════════════════ -->
+<script>
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const f3  = v => parseFloat(v).toFixed(3);
+const f1  = v => parseFloat(v).toFixed(1);
+const f2  = v => parseFloat(v).toFixed(2);
+const $   = id => document.getElementById(id);
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+let _tt;
+function toast(msg, err=false){
+  $("toast").textContent=msg;
+  $("toast").className="show"+(err?" te":"");
+  clearTimeout(_tt);_tt=setTimeout(()=>$("toast").className="",3400);
+}
+
+// ── Hz tracker ────────────────────────────────────────────────────────────────
+let _lastTs=null,_fpsArr=[];
+function trackHz(){
+  const now=Date.now();
+  if(_lastTs){
+    const dt=now-_lastTs;
+    _fpsArr.push(1000/dt);
+    if(_fpsArr.length>10)_fpsArr.shift();
+    const hz=_fpsArr.reduce((a,b)=>a+b,0)/_fpsArr.length;
+    $("hzRate").textContent=hz.toFixed(1)+" Hz";
+  }
+  _lastTs=now;
+}
+
+// ── Connection ────────────────────────────────────────────────────────────────
+let _on=null;
+function setOnline(v){
+  if(v===_on)return;_on=v;
+  const el=$("tagConn");
+  el.textContent=v?"ONLINE":"OFFLINE";
+  el.className="tag "+(v?"tag-live":"tag-offline");
+}
+
+// ── Artificial horizon ────────────────────────────────────────────────────────
+function updateHorizon(roll, pitch){
+  // roll: tilt the whole group
+  // pitch: shift horizon vertically (each degree ≈ 3.3px at this scale)
+  const pitchPx = pitch * 3.3;
+  document.getElementById("hGroup").setAttribute("transform",
+    `rotate(${-roll}, 110, 110)`);
+  document.getElementById("hPitch").setAttribute("transform",
+    `translate(0, ${pitchPx})`);
+  // roll pointer around the arc
+  const r=96, cx=110, cy=110;
+  const rad=((-roll-90)*Math.PI)/180;
+  const tx=cx+r*Math.cos(rad);
+  const ty=cy+r*Math.sin(rad);
+  // rotate the pointer polygon
+  document.getElementById("rollPtr").setAttribute("transform",
+    `rotate(${-roll}, 110, 110)`);
+}
+
+// ── Compass canvas ────────────────────────────────────────────────────────────
+const compassCanvas=$("compassCanvas");
+const compassCtx=compassCanvas.getContext("2d");
+
+function drawCompass(hdg){
+  const W=compassCanvas.width, H=compassCanvas.height;
+  compassCtx.clearRect(0,0,W,H);
+
+  // background
+  compassCtx.fillStyle="#080d1a";
+  compassCtx.fillRect(0,0,W,H);
+
+  // scroll the tape: centre on heading
+  const degPx = W/60;   // 60° visible
+  const startDeg = hdg - 30;
+
+  compassCtx.font="bold 11px Consolas,monospace";
+  compassCtx.textAlign="center";
+
+  for(let d=Math.floor(startDeg/5)*5; d<=startDeg+60; d+=5){
+    const xPos=((d-startDeg)/60)*W;
+    const isMajor=(d%10===0);
+    const tickH=isMajor?14:7;
+    const dn=((d%360)+360)%360;
+
+    compassCtx.strokeStyle=isMajor?"rgba(0,212,255,.7)":"rgba(0,212,255,.3)";
+    compassCtx.lineWidth=isMajor?1.5:1;
+    compassCtx.beginPath();
+    compassCtx.moveTo(xPos,H);
+    compassCtx.lineTo(xPos,H-tickH);
+    compassCtx.stroke();
+
+    if(isMajor){
+      const label=["N","030","060","E","120","150","S","210","240","W","300","330"][dn/30]||dn;
+      compassCtx.fillStyle=["N","E","S","W"].includes(label)?"#00e676":"rgba(0,212,255,.8)";
+      compassCtx.fillText(label,xPos,H-18);
+    }
+  }
+
+  // centre marker
+  compassCtx.strokeStyle="#ffb300";
+  compassCtx.lineWidth=2;
+  compassCtx.beginPath();
+  compassCtx.moveTo(W/2,H);
+  compassCtx.lineTo(W/2,H-H*0.7);
+  compassCtx.stroke();
+
+  // top triangle
+  compassCtx.fillStyle="#ffb300";
+  compassCtx.beginPath();
+  compassCtx.moveTo(W/2-5,0);
+  compassCtx.lineTo(W/2+5,0);
+  compassCtx.lineTo(W/2,8);
+  compassCtx.fill();
+}
+
+// ── RC channel bar helper ─────────────────────────────────────────────────────
+// RC range 1000–2000 μs
+function rcPct(v){ return Math.min(100,Math.max(0,((v-1000)/1000)*100)); }
+
+// ── RSSI bars ─────────────────────────────────────────────────────────────────
+function updateRSSI(rssi){
+  const pct=rssi/255;
+  const bars=$("rssiBars").querySelectorAll(".rssi-bar");
+  bars.forEach((b,i)=>{
+    b.classList.toggle("on", pct>(i/bars.length));
+  });
+  $("rssiVal").textContent=rssi;
+}
+
+// ── Main update ───────────────────────────────────────────────────────────────
+function applyData(d){
+  // Status / mode
+  const armed=d.status==="ARMED";
+  $("txtStatus").textContent=d.status||"DISARMED";
+  $("tagStatus").className="tag "+(armed?"tag-armed":"tag-disarm");
+  $("tagMode").textContent=d.mode||"--";
+
+  // Attitude
+  const roll  = parseFloat(d.roll)||0;
+  const pitch = parseFloat(d.pitch)||0;
+  const yaw   = parseFloat(d.yaw)||0;
+  updateHorizon(roll, pitch);
+  $("hRoll").textContent  =roll.toFixed(1)+"°";
+  $("hPitchV").textContent=pitch.toFixed(1)+"°";
+  $("hYaw").textContent   =yaw.toFixed(1)+"°";
+
+  // VFR HUD
+  const alt=parseFloat(d.alt)||0;
+  $("vAlt").textContent=alt.toFixed(3);
+  const climb=parseFloat(d.climb)||0;
+  $("vClimb").textContent=(climb>=0?"+":"")+climb.toFixed(3)+" m/s";
+  $("vClimb").className="val "+(climb>0.05?"val-green":climb<-0.05?"val-red":"val-amber");
+  $("vHdg").textContent=(parseInt(d.heading)||0)+"°";
+  const thr=parseInt(d.throttle)||0;
+  $("vThrPct").textContent=thr+"%";
+  $("thrFill").style.width=thr+"%";
+  drawCompass(parseInt(d.heading)||0);
+
+  // Battery
+  const bv=parseFloat(d.battery_voltage)||0;
+  const ba=parseFloat(d.battery_current)||0;
+  const pct=Math.min(100,Math.max(0,((bv-10.5)/2.1)*100));
+  const bColor=pct>55?"var(--green)":pct>25?"var(--amber)":"var(--red)";
+  const gColor=pct>55?"var(--green)":pct>25?"val-amber":"val-red";
+  $("bBig").innerHTML=bv.toFixed(3)+'<span style="font-size:1rem;color:var(--muted);margin-left:4px">V</span>';
+  $("bBig").style.color=bColor;
+  $("bBig").style.textShadow=`0 0 12px ${bColor}88`;
+  $("bPctTxt").textContent=pct.toFixed(0)+"% charged";
+  $("bBar").style.width=pct+"%";
+  $("bBar").style.background=bColor;
+  $("bBar").style.boxShadow=`0 0 8px ${bColor}88`;
+  $("bCurr").textContent=ba.toFixed(3)+" A";
+  $("bPow").textContent=(bv*ba).toFixed(2)+" W";
+
+  // EKF
+  const ekfOk=d.ekf_healthy===true||d.ekf_healthy==="true";
+  $("ekfBadge").textContent=ekfOk?"HEALTHY":"DEGRADED";
+  $("ekfBadge").className="ekf-badge "+(ekfOk?"ekf-ok":"ekf-bad");
+  $("ekfFlags").textContent=d.ekf_flags||"0x0000";
+  const active=(Array.isArray(d.ekf_active)?d.ekf_active:
+    (d.ekf_active||"").split(",")).filter(Boolean);
+  $("ekfActive").innerHTML=active.map(a=>`<span class="ekf-chip">${a.trim()}</span>`).join("");
+  $("ekfVV").textContent=f3(d.ekf_vel_var);
+  $("ekfPV").textContent=f3(d.ekf_pos_var);
+  $("ekfCV").textContent=f3(d.ekf_compass_var);
+
+  // Local position
+  $("pX").textContent=f3(d.pos_x);
+  $("pY").textContent=f3(d.pos_y);
+  $("pZ").textContent=f3(d.pos_z);
+  $("vX").textContent=f3(d.vel_x);
+  $("vY").textContent=f3(d.vel_y);
+  $("vZ").textContent=f3(d.vel_z);
+
+  // Optical flow
+  const fq=parseInt(d.flow_quality)||0;
+  $("flowQval").textContent=fq+"/255";
+  $("flowQBar").style.width=((fq/255)*100)+"%";
+  $("flX").textContent=f3(d.flow_x)+" px/s";
+  $("flY").textContent=f3(d.flow_y)+" px/s";
+  $("flCX").textContent=f3(d.flow_comp_x)+" m/s";
+  $("flCY").textContent=f3(d.flow_comp_y)+" m/s";
+
+  // Rangefinder
+  const rng=parseFloat(d.range_distance)||0;
+  $("rngBig").innerHTML=rng.toFixed(3)+'<span class="rng-unit">m</span>';
+  $("rngV").textContent=f3(d.range_voltage)+" V";
+  $("rngBar").style.width=Math.min(100,(rng/5)*100)+"%";
+
+  // RC
+  const rcIds=["rc_ch1","rc_ch2","rc_ch3","rc_ch4","rc_ch5"];
+  const barIds=["rc1","rc2","rc3","rc4","rc5"];
+  const valIds=["rc1v","rc2v","rc3v","rc4v","rc5v"];
+  rcIds.forEach((k,i)=>{
+    const v=parseInt(d[k])||0;
+    $(barIds[i]).style.width=rcPct(v)+"%";
+    $(valIds[i]).textContent=v;
+  });
+  updateRSSI(parseInt(d.rc_rssi)||0);
+}
+
+// ── Fetch loop ────────────────────────────────────────────────────────────────
+async function fetchData(){
+  try{
+    const r=await fetch("/data");
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    const d=await r.json();
+    setOnline(true);
+    trackHz();
+    applyData(d);
+  }catch(_){setOnline(false)}
+}
+
+fetchData();
+setInterval(fetchData, 200);   // 5 Hz — matches drone output rate
+
+// ── File upload ───────────────────────────────────────────────────────────────
+let _f=null;
+$("fileInput").addEventListener("change",()=>{
+  _f=$("fileInput").files[0]||null;
+  $("selName").textContent=_f?_f.name:"No file chosen";
+  $("sendBtn").disabled=!_f;
+  $("upResult").textContent="";
+});
+
+$("sendBtn").addEventListener("click",async()=>{
+  if(!_f)return;
+  $("sendBtn").disabled=true;
+  $("upResult").className="";$("upResult").textContent="Sending…";
+  try{
+    const fd=new FormData();fd.append("image",_f);
+    const r=await fetch("/upload-from-website",{method:"POST",body:fd});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||"HTTP "+r.status)}
+    $("upResult").className="ok";$("upResult").textContent="✓ Sent";
+    toast("Image uploaded — Pi will download it shortly.");
+  }catch(e){
+    $("upResult").className="err";$("upResult").textContent="✗ "+e.message;
+    toast("Upload failed: "+e.message,true);
+  }finally{$("sendBtn").disabled=false}
+});
+</script>
+</body>
+</html>
